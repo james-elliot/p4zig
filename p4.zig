@@ -1,8 +1,8 @@
 const std = @import("std");
+const NB_BITS: u8 = 27;
 
 const SIZEX: usize = 6;
 const SIZEY: usize = 6;
-const NB_BITS: u8 = 26;
 
 const stdout = std.io.getStdOut().writer();
 
@@ -81,7 +81,7 @@ const ZHASH = HashElem{
 };
 
 const HASH_SIZE: usize = 1 << NB_BITS;
-var hashes = [_]HashElem{ZHASH} ** HASH_SIZE;
+var hashes: [HASH_SIZE]HashElem = undefined;
 
 fn store(hv: Sigs, alpha: Vals, beta: Vals, g: Vals, depth: Depth) void {
     const ind = (hv & HASH_MASK);
@@ -281,9 +281,15 @@ pub fn main() !void {
     for (hashesb) |*b| {
         for (b) |*a| a.* = my_rnd64();
     }
+    for (hashes) |*a| {
+        a.* = ZHASH;
+    }
     first_hash = my_rnd64();
     var hv: Sigs = first_hash;
     var hv2: Sigs = first_hash;
+    var t = std.time.milliTimestamp();
     const ret = ab(Vals_min, Vals_max, WHITE, 0, hv, hv2);
+    t = std.time.milliTimestamp() - t;
+    try stdout.print("{d}\n", .{t});
     try stdout.print("{d}\n", .{ret});
 }

@@ -1,9 +1,27 @@
 const std = @import("std");
 
+const SIZEX: usize = 6;
+const SIZEY: usize = 6;
+const NB_BITS: u8 = 26;
+
 const stdout = std.io.getStdOut().writer();
 
-const RndGen = std.rand.DefaultPrng;
-var rnd = RndGen.init(0);
+//const RndGen = std.rand.DefaultPrng;
+//var rnd = RndGen.init(0);
+
+var rnd_curr: u64 = 20170705;
+fn my_rnd() u32 {
+    const a: u64 = 742938285;
+    rnd_curr = (rnd_curr * a) % ((1 << 31) - 1);
+    return @truncate(u32, rnd_curr);
+}
+
+fn my_rnd64() u64 {
+    const a: u64 = my_rnd();
+    const b: u64 = my_rnd();
+    const c: u64 = my_rnd();
+    return (a + (b << 31) + (c << 62));
+}
 
 const Vals = i8;
 const Vals_min = -128;
@@ -11,9 +29,6 @@ const Vals_max = 127;
 const Depth = u8;
 const Colors = i8;
 const Sigs = u64;
-
-const SIZEX: usize = 6;
-const SIZEY: usize = 6;
 
 const FOUR: usize = 4;
 
@@ -26,25 +41,9 @@ const EMPTY: Colors = 0;
 const HASH_MASK: Sigs = (1 << NB_BITS) - 1;
 
 //const first_hash = rnd.random().int(Sigs);
-const first_hash = 0;
-//const turn_hash = rnd.random().int(Sigs);
-const turn_hash = 0;
-
-const hashesw = init: {
-    var t: [SIZEX][SIZEY]Sigs = undefined;
-    for (t) |*b| {
-        for (b) |*a| a.* = 0;
-    }
-    break :init t;
-};
-
-const hashesb = init: {
-    var t: [SIZEX][SIZEY]Sigs = undefined;
-    for (t) |*b| {
-        for (b) |*a| a.* = 0;
-    }
-    break :init t;
-};
+var first_hash: Sigs = undefined;
+var hashesw: [SIZEX][SIZEY]Sigs = undefined;
+var hashesb: [SIZEX][SIZEY]Sigs = undefined;
 
 const HashElem = struct {
     sig: Sigs,
@@ -62,9 +61,8 @@ var tab = init: {
 };
 
 var first = [_]usize{0} ** SIZEX;
-var glob = false;
 
-fn retrieve2(hv: Sigs, v_inf: *Vals, v_sup: *Vals) bool {
+fn retrieve(hv: Sigs, v_inf: *Vals, v_sup: *Vals) bool {
     const ind: usize = (hv & HASH_MASK);
     if (hashes[ind].sig == hv) {
         v_inf.* = hashes[ind].v_inf;
@@ -81,26 +79,13 @@ const ZHASH = HashElem{
     .v_sup = 0,
     .d = 0,
 };
-const NB_BITS: u8 = 20;
+
 const HASH_SIZE: usize = 1 << NB_BITS;
 var hashes = [_]HashElem{ZHASH} ** HASH_SIZE;
-fn retrieve(hv: usize) bool {
-    stdout.print("hv={d}\n", .{hv}) catch unreachable;
-    stdout.print("h={d}\n", .{hashes[0].v_inf}) catch unreachable;
-    stdout.print("h={d}\n", .{hashes[hv].v_inf}) catch unreachable;
-    return false;
-}
 
 fn store(hv: Sigs, alpha: Vals, beta: Vals, g: Vals, depth: Depth) void {
-    if (tab[0][0] < 1000000) return;
     const ind = (hv & HASH_MASK);
-    stdout.print("ind_store={d}\n", .{ind}) catch unreachable;
-    if (ind >= HASH_SIZE) {
-        stdout.print("ind={d}\n", .{ind}) catch unreachable;
-        std.os.abort();
-    }
     const d = MAXDEPTH + 2 - depth;
-    if (depth < 1000000) return;
     if (hashes[ind].d <= d) {
         if (hashes[ind].sig != hv) {
             hashes[ind].d = d;
@@ -121,101 +106,88 @@ fn store(hv: Sigs, alpha: Vals, beta: Vals, g: Vals, depth: Depth) void {
 
 fn eval(x: usize, y: usize, color: Colors) bool {
     // For y search only below
-    {
-        if (x <= 1000) return false;
+    if (y >= FOUR - 1) {
+        var nb: u32 = 1;
         var j = y - 1;
-        while (j >= 0) : (j -= 1) {
-            if (tab[x][j] != color) {
-                break;
-            } else {
-                if ((y - j) >= FOUR - 1) return true;
-            }
+        while (true) {
+            if (tab[x][j] == color) nb += 1 else break;
+            if (j == 0) break;
+            j -= 1;
         }
+        if (nb >= FOUR) return true;
     }
 
     {
         // Horizontal search
-        var nb = init: {
+        var nb: u32 = 1;
+        if (x > 0) {
             var i = x - 1;
-            while (i >= 0) : (i -= 1) {
-                if (tab[i][y] != color) {
-                    break;
-                }
+            while (true) {
+                if (tab[i][y] == color) nb += 1 else break;
+                if (i == 0) break;
+                i -= 1;
             }
-            break :init x - i - 1;
-        };
-        {
-            var i = x + 1;
-            while (i < SIZEX) : (i += 1) {
-                if (tab[i][y] != color) {
-                    break;
-                }
-            }
-            nb += i - x - 1;
         }
-        if (nb >= FOUR - 1) return true;
+        if (x < SIZEX - 1) {
+            var i = x + 1;
+            while (true) {
+                if (tab[i][y] == color) nb += 1 else break;
+                if (i == SIZEX - 1) break;
+                i += 1;
+            }
+        }
+        if (nb >= FOUR) return true;
     }
 
     {
         // diag1
-        var nb = init: {
+        var nb: u32 = 1;
+        if ((x < SIZEX - 1) and (y < SIZEY - 1)) {
             var i = x + 1;
             var j = y + 1;
-            while ((i < SIZEX) and (j < SIZEY)) : ({
+            while (true) {
+                if (tab[i][j] == color) nb += 1 else break;
+                if ((i == SIZEX - 1) or (j == SIZEY - 1)) break;
                 i += 1;
                 j += 1;
-            }) {
-                if (tab[i][j] != color) {
-                    break;
-                }
             }
-            break :init i - x - 1;
-        };
-        {
+        }
+        if ((x > 0) and (y > 0)) {
             var i = x - 1;
             var j = y - 1;
-            while ((i >= 0) and (j >= 0)) : ({
+            while (true) {
+                if (tab[i][j] == color) nb += 1 else break;
+                if ((i == 0) or (j == 0)) break;
                 i -= 1;
                 j -= 1;
-            }) {
-                if (tab[i][j] != color) {
-                    break;
-                }
             }
-            nb += x - i - 1;
         }
-        if (nb >= FOUR - 1) return true;
+        if (nb >= FOUR) return true;
     }
-
     {
         // diag2
-        var nb = init: {
+        var nb: u32 = 1;
+        if ((x < SIZEX - 1) and (y > 0)) {
             var i = x + 1;
             var j = y - 1;
-            while ((i < SIZEX) and (j < SIZEY)) : ({
+            while (true) {
+                if (tab[i][j] == color) nb += 1 else break;
+                if ((i == SIZEX - 1) or (j == 0)) break;
                 i += 1;
                 j -= 1;
-            }) {
-                if (tab[i][j] != color) {
-                    break;
-                }
             }
-            break :init i - x - 1;
-        };
-        {
+        }
+        if ((x > 0) and (y < SIZEY - 1)) {
             var i = x - 1;
             var j = y + 1;
-            while ((i >= 0) and (j >= 0)) : ({
+            while (true) {
+                if (tab[i][j] == color) nb += 1 else break;
+                if ((i == 0) or (j == SIZEY - 1)) break;
                 i -= 1;
                 j += 1;
-            }) {
-                if (tab[i][j] != color) {
-                    break;
-                }
             }
-            nb += x - i - 1;
         }
-        if (nb >= FOUR - 1) return true;
+        if (nb >= FOUR) return true;
     }
 
     return false;
@@ -232,8 +204,7 @@ fn ab(
     const indexes = comptime init: {
         var t: [SIZEX]usize = undefined;
         for (t) |*b, ix| {
-            //            b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
-            b.* = @bitCast(usize, ix);
+            b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
         }
         break :init t;
     };
@@ -244,13 +215,7 @@ fn ab(
     var v_sup: Vals = 0;
     //  stdout.print("hv={d}\n", .{hv}) catch unreachable;
     var ret = false;
-    stdout.print("Entering retrieve hv={d}\n", .{hv}) catch unreachable;
-    ret = retrieve(hv);
-    if (ret) {
-        //    stdout.print("hv2={d}\n", .{hv}) catch unreachable;
-    } else {
-        //  stdout.print("hv3={d}\n", .{hv}) catch unreachable;
-    }
+    ret = retrieve(@min(hv, hv2), &v_inf, &v_sup);
     if (ret) {
         if (v_inf == v_sup) return v_inf;
         if (v_inf >= b) return v_inf;
@@ -305,19 +270,18 @@ fn ab(
             }
         }
     }
-    stdout.print("depth={d}\n", .{depth}) catch unreachable;
-
-    //    store(@min(hv, hv2), alpha, beta, g, depth);
-    //    store(hv, alpha, beta, g, depth);
+    store(@min(hv, hv2), alpha, beta, g, depth);
     return g;
 }
 
 pub fn main() !void {
-    //    var titi: HVals = undefined;
-    //    var i: usize = -1;
-    //  while (i <= 16) : (i += 1) {
-    //    try stdout.print("{d}\n", .{i});
-    // }
+    for (hashesw) |*b| {
+        for (b) |*a| a.* = my_rnd64();
+    }
+    for (hashesb) |*b| {
+        for (b) |*a| a.* = my_rnd64();
+    }
+    first_hash = my_rnd64();
     var hv: Sigs = first_hash;
     var hv2: Sigs = first_hash;
     const ret = ab(Vals_min, Vals_max, WHITE, 0, hv, hv2);

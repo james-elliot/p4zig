@@ -81,7 +81,8 @@ const ZHASH = HashElem{
 };
 
 const HASH_SIZE: usize = 1 << NB_BITS;
-var hashes: [HASH_SIZE]HashElem = undefined;
+//var hashes2: [HASH_SIZE]HashElem = undefined;
+var hashes: []HashElem = undefined;
 
 fn store(hv: Sigs, alpha: Vals, beta: Vals, g: Vals, depth: Depth) void {
     const ind = (hv & HASH_MASK);
@@ -275,14 +276,15 @@ fn ab(
 }
 
 pub fn main() !void {
+    const allocator = std.heap.page_allocator;
+    hashes = try allocator.alloc(HashElem, HASH_SIZE);
+    defer allocator.free(hashes);
+    for (hashes) |*a| a.* = ZHASH;
     for (hashesw) |*b| {
         for (b) |*a| a.* = my_rnd64();
     }
     for (hashesb) |*b| {
         for (b) |*a| a.* = my_rnd64();
-    }
-    for (hashes) |*a| {
-        a.* = ZHASH;
     }
     first_hash = my_rnd64();
     var hv: Sigs = first_hash;

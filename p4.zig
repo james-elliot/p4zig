@@ -1,9 +1,9 @@
 const std = @import("std");
-const NB_BITS: u8 = 27;
+const NB_BITS: u8 = 29;
 
-const SIZEX: usize = 6;
+const SIZEX: usize = 7;
 const SIZEY: usize = 6;
-
+// 7x6 NB_BITS=29 582s
 const stdout = std.io.getStdOut().writer();
 
 //const RndGen = std.rand.DefaultPrng;
@@ -45,7 +45,7 @@ var first_hash: Sigs = undefined;
 var hashesw: [SIZEX][SIZEY]Sigs = undefined;
 var hashesb: [SIZEX][SIZEY]Sigs = undefined;
 
-const HashElem = struct {
+const HashElem = packed struct {
     sig: Sigs,
     v_inf: Vals,
     v_sup: Vals,

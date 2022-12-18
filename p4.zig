@@ -1,9 +1,13 @@
 const std = @import("std");
-const NB_BITS: u8 = 29;
+const NB_BITS: u8 = 27;
 
-const SIZEX: usize = 7;
+const SIZEX: usize = 6;
 const SIZEY: usize = 6;
+// 6x6 NB_BITS=27 20s
+// 6x6 NB_BITS=29 24s
+// 6x7 NB_BITS=29 252s
 // 7x6 NB_BITS=29 582s
+
 const stdout = std.io.getStdOut().writer();
 
 //const RndGen = std.rand.DefaultPrng;

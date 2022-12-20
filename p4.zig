@@ -8,25 +8,6 @@ const SIZEY: usize = 6;
 // 6x7 NB_BITS=29 252s
 // 7x6 NB_BITS=29 582s
 
-const stdout = std.io.getStdOut().writer();
-
-//const RndGen = std.rand.DefaultPrng;
-//var rnd = RndGen.init(0);
-
-var rnd_curr: u64 = 20170705;
-fn my_rnd() u32 {
-    const a: u64 = 742938285;
-    rnd_curr = (rnd_curr * a) % ((1 << 31) - 1);
-    return @truncate(u32, rnd_curr);
-}
-
-fn my_rnd64() u64 {
-    const a: u64 = my_rnd();
-    const b: u64 = my_rnd();
-    const c: u64 = my_rnd();
-    return (a + (b << 31) + (c << 62));
-}
-
 const Vals = i8;
 const Vals_min = -128;
 const Vals_max = 127;
@@ -42,9 +23,9 @@ const WHITE: Colors = 1;
 const BLACK = -WHITE;
 const EMPTY: Colors = 0;
 
-const HASH_MASK: Sigs = (1 << NB_BITS) - 1;
+const HASH_SIZE: usize = 1 << NB_BITS;
+const HASH_MASK: Sigs = HASH_SIZE - 1;
 
-//const first_hash = rnd.random().int(Sigs);
 var first_hash: Sigs = undefined;
 var hashesw: [SIZEX][SIZEY]Sigs = undefined;
 var hashesb: [SIZEX][SIZEY]Sigs = undefined;
@@ -55,6 +36,15 @@ const HashElem = packed struct {
     v_sup: Vals,
     d: Depth,
 };
+
+const ZHASH = HashElem{
+    .sig = 0,
+    .v_inf = 0,
+    .v_sup = 0,
+    .d = 0,
+};
+
+var hashes: []HashElem = undefined;
 
 var tab = init: {
     var t: [SIZEX][SIZEY]Colors = undefined;
@@ -76,17 +66,6 @@ fn retrieve(hv: Sigs, v_inf: *Vals, v_sup: *Vals) bool {
         return false;
     }
 }
-
-const ZHASH = HashElem{
-    .sig = 0,
-    .v_inf = 0,
-    .v_sup = 0,
-    .d = 0,
-};
-
-const HASH_SIZE: usize = 1 << NB_BITS;
-//var hashes2: [HASH_SIZE]HashElem = undefined;
-var hashes: []HashElem = undefined;
 
 fn store(hv: Sigs, alpha: Vals, beta: Vals, g: Vals, depth: Depth) void {
     const ind = (hv & HASH_MASK);
@@ -284,13 +263,16 @@ pub fn main() !void {
     hashes = try allocator.alloc(HashElem, HASH_SIZE);
     defer allocator.free(hashes);
     for (hashes) |*a| a.* = ZHASH;
+    const stdout = std.io.getStdOut().writer();
+    const RndGen = std.rand.DefaultPrng;
+    var rnd = RndGen.init(0);
     for (hashesw) |*b| {
-        for (b) |*a| a.* = my_rnd64();
+        for (b) |*a| a.* = rnd.random().int(Sigs);
     }
     for (hashesb) |*b| {
-        for (b) |*a| a.* = my_rnd64();
+        for (b) |*a| a.* = rnd.random().int(Sigs);
     }
-    first_hash = my_rnd64();
+    first_hash = rnd.random().int(Sigs);
     var hv: Sigs = first_hash;
     var hv2: Sigs = first_hash;
     var t = std.time.milliTimestamp();

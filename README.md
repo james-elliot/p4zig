@@ -1,4 +1,4 @@
 # p4zig
-P4 in Zig
+P4 solver in Zig
 
-Faster than C. However, still lot of bugs in the compiler, and so I had to circumvent some of them (such as rewriting a random number generator)...
+A little bit faster than C, much faster than Rust. However, still lot of bugs in the compiler...

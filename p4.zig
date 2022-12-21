@@ -247,13 +247,12 @@ fn ab(
 }
 
 pub fn main() !void {
+    const stdout = std.io.getStdOut().writer();
     const allocator = std.heap.page_allocator;
+    const RndGen = std.rand.DefaultPrng;
     hashes = try allocator.alloc(HashElem, HASH_SIZE);
     defer allocator.free(hashes);
     for (hashes) |*a| a.* = ZHASH;
-    const stdout = std.io.getStdOut().writer();
-
-    const RndGen = std.rand.DefaultPrng;
     var rnd = RndGen.init(0);
     for (hashesw) |*b| {
         for (b) |*a| a.* = rnd.random().int(Sigs);

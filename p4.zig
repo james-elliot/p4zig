@@ -1,28 +1,24 @@
 const std = @import("std");
-const NB_BITS: u8 = 29;
 
+// 27 bits use 2GB
+const NB_BITS: u8 = 29;
 const SIZEX: usize = 6;
 const SIZEY: usize = 7;
-// 6x6 NB_BITS=27 25s
-// 6x6 NB_BITS=29 30s
 // 6x7 NB_BITS=29 255s
 // 7x6 NB_BITS=29 582s
 
 const Vals = i8;
-const Vals_min = -128;
-const Vals_max = 127;
+const Vals_min: Vals = -128;
+const Vals_max: Vals = 127;
 const Depth = u8;
 const Colors = i8;
 const Sigs = u64;
 
 const FOUR: usize = 4;
-
 const MAXDEPTH: Depth = SIZEX * SIZEY - 1;
-
 const WHITE: Colors = 1;
 const BLACK = -WHITE;
 const EMPTY: Colors = 0;
-
 const HASH_SIZE: usize = 1 << NB_BITS;
 const HASH_MASK: Sigs = HASH_SIZE - 1;
 
@@ -45,9 +41,7 @@ const ZHASH = HashElem{
 };
 
 var hashes: []HashElem = undefined;
-
 var tab = [_][SIZEY]Colors{[_]Colors{EMPTY} ** SIZEY} ** SIZEX;
-
 var first = [_]usize{0} ** SIZEX;
 
 fn retrieve(hv: Sigs, v_inf: *Vals, v_sup: *Vals) bool {
@@ -83,7 +77,7 @@ fn store(hv: Sigs, alpha: Vals, beta: Vals, g: Vals, depth: Depth) void {
 }
 
 fn eval(x: usize, y: usize, color: Colors) bool {
-    // For y search only below
+    // For vertical search, search only below
     if (y >= FOUR - 1) {
         var nb: u32 = 1;
         var j = y - 1;
@@ -94,7 +88,6 @@ fn eval(x: usize, y: usize, color: Colors) bool {
         }
         if (nb >= FOUR) return true;
     }
-
     {
         // Horizontal search
         var nb: u32 = 1;
@@ -116,7 +109,6 @@ fn eval(x: usize, y: usize, color: Colors) bool {
         }
         if (nb >= FOUR) return true;
     }
-
     {
         // diag1
         var nb: u32 = 1;
@@ -167,7 +159,6 @@ fn eval(x: usize, y: usize, color: Colors) bool {
         }
         if (nb >= FOUR) return true;
     }
-
     return false;
 }
 

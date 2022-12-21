@@ -1,11 +1,11 @@
 const std = @import("std");
-const NB_BITS: u8 = 27;
+const NB_BITS: u8 = 29;
 
 const SIZEX: usize = 6;
-const SIZEY: usize = 6;
-// 6x6 NB_BITS=27 20s
-// 6x6 NB_BITS=29 24s
-// 6x7 NB_BITS=29 252s
+const SIZEY: usize = 7;
+// 6x6 NB_BITS=27 25s
+// 6x6 NB_BITS=29 30s
+// 6x7 NB_BITS=29 255s
 // 7x6 NB_BITS=29 582s
 
 const Vals = i8;
@@ -17,7 +17,7 @@ const Sigs = u64;
 
 const FOUR: usize = 4;
 
-const MAXDEPTH: Depth = (SIZEX * SIZEY - 1);
+const MAXDEPTH: Depth = SIZEX * SIZEY - 1;
 
 const WHITE: Colors = 1;
 const BLACK = -WHITE;
@@ -46,18 +46,12 @@ const ZHASH = HashElem{
 
 var hashes: []HashElem = undefined;
 
-var tab = init: {
-    var t: [SIZEX][SIZEY]Colors = undefined;
-    for (t) |*b| {
-        for (b) |*a| a.* = 0;
-    }
-    break :init t;
-};
+var tab = [_][SIZEY]Colors{[_]Colors{EMPTY} ** SIZEY} ** SIZEX;
 
 var first = [_]usize{0} ** SIZEX;
 
 fn retrieve(hv: Sigs, v_inf: *Vals, v_sup: *Vals) bool {
-    const ind: usize = (hv & HASH_MASK);
+    const ind: usize = hv & HASH_MASK;
     if (hashes[ind].sig == hv) {
         v_inf.* = hashes[ind].v_inf;
         v_sup.* = hashes[ind].v_sup;
@@ -68,7 +62,7 @@ fn retrieve(hv: Sigs, v_inf: *Vals, v_sup: *Vals) bool {
 }
 
 fn store(hv: Sigs, alpha: Vals, beta: Vals, g: Vals, depth: Depth) void {
-    const ind = (hv & HASH_MASK);
+    const ind = hv & HASH_MASK;
     const d = MAXDEPTH + 2 - depth;
     if (hashes[ind].d <= d) {
         if (hashes[ind].sig != hv) {
@@ -187,20 +181,14 @@ fn ab(
 ) Vals {
     const indexes = comptime init: {
         var t: [SIZEX]usize = undefined;
-        for (t) |*b, ix| {
-            b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
-        }
+        for (t) |*b, ix| b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
         break :init t;
     };
-    //    stdout.print("indexes={d}\n", .{indexes}) catch unreachable;
     var a = alpha;
     var b = beta;
     var v_inf: Vals = 0;
     var v_sup: Vals = 0;
-    //  stdout.print("hv={d}\n", .{hv}) catch unreachable;
-    var ret = false;
-    ret = retrieve(@min(hv, hv2), &v_inf, &v_sup);
-    if (ret) {
+    if (retrieve(@min(hv, hv2), &v_inf, &v_sup)) {
         if (v_inf == v_sup) return v_inf;
         if (v_inf >= b) return v_inf;
         if (v_sup <= a) return v_sup;
@@ -212,10 +200,10 @@ fn ab(
         if ((y != SIZEY) and (eval(x, y, color))) return color;
     }
     if (depth == MAXDEPTH) return 0;
+
     var g: Vals = if (color == WHITE) Vals_min else Vals_max;
     var nhv: Sigs = undefined;
     var nhv2: Sigs = undefined;
-
     for (indexes) |x| {
         const y = first[x];
         if (y < SIZEY) {
@@ -264,6 +252,7 @@ pub fn main() !void {
     defer allocator.free(hashes);
     for (hashes) |*a| a.* = ZHASH;
     const stdout = std.io.getStdOut().writer();
+
     const RndGen = std.rand.DefaultPrng;
     var rnd = RndGen.init(0);
     for (hashesw) |*b| {
@@ -273,11 +262,13 @@ pub fn main() !void {
         for (b) |*a| a.* = rnd.random().int(Sigs);
     }
     first_hash = rnd.random().int(Sigs);
-    var hv: Sigs = first_hash;
-    var hv2: Sigs = first_hash;
     var t = std.time.milliTimestamp();
-    const ret = ab(Vals_min, Vals_max, WHITE, 0, hv, hv2);
+    const ret = ab(Vals_min, Vals_max, WHITE, 0, first_hash, first_hash);
     t = std.time.milliTimestamp() - t;
     try stdout.print("{d}\n", .{t});
     try stdout.print("{d}\n", .{ret});
 }
+
+//const Inner = struct { a: u32, b: bool };
+//var toto = [_][20]Inner{[_]Inner{.{ .a = 1, .b = true }} ** 20} ** 10;
+

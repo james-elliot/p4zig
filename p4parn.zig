@@ -1,4 +1,5 @@
 const std = @import("std");
+const stdout = std.io.getStdOut().writer();
 
 // 27 bits use 2GB
 const NB_BITS: u8 = 28;
@@ -94,7 +95,7 @@ fn eval(tab: *[SIZEX][SIZEY]Colors, x: usize, y: usize, color: Colors) bool {
 }
 
 const Vals = i8;
-const Vals_min: Vals = -128;
+const Vals_min: Vals = -127;
 const Vals_max: Vals = 127;
 const Val_working: i8 = 65536;
 const Depth = u8;
@@ -176,8 +177,8 @@ fn ab(
     };
     var a = alpha;
     var b = beta;
-    var v_inf: Vals = 0;
-    var v_sup: Vals = 0;
+    var v_inf: Vals = undefined;
+    var v_sup: Vals = undefined;
     if (retrieve(@min(hv, hv2), &v_inf, &v_sup)) {
         if (v_inf == v_sup) return v_inf;
         if (v_inf >= b) return v_inf;
@@ -187,11 +188,10 @@ fn ab(
     }
     for (indexes) |x| {
         const y = first[x];
-        if ((y != SIZEY) and (eval(tab, x, y, color))) return color;
+        if ((y != SIZEY) and (eval(tab, x, y, color))) return 1;
     }
     if (depth == MAXDEPTH) return 0;
-
-    var g: Vals = if (color == WHITE) Vals_min else Vals_max;
+    var g: Vals = Vals_min;
     //var g: Vals = if (color == WHITE) a else b;
     var nhv: Sigs = undefined;
     var nhv2: Sigs = undefined;
@@ -199,25 +199,21 @@ fn ab(
         if (a >= b) break;
         const y = first[x];
         if (y < SIZEY) {
-            tab[x][y] = color;
             first[x] += 1;
             if (color == WHITE) {
+                tab[x][y] = WHITE;
                 nhv = hv ^ hashesw[x][y];
                 nhv2 = hv2 ^ hashesw[SIZEX - 1 - x][y];
             } else {
+                tab[x][y] = BLACK;
                 nhv = hv ^ hashesb[x][y];
                 nhv2 = hv2 ^ hashesb[SIZEX - 1 - x][y];
             }
-            const v = ab(first, tab, a, b, -color, depth + 1, nhv, nhv2);
+            const v = -ab(first, tab, -b, -a, -color, depth + 1, nhv, nhv2);
             first[x] -= 1;
             tab[x][y] = EMPTY;
-            if (color == WHITE) {
-                g = @max(v, g);
-                a = @max(a, g);
-            } else {
-                g = @min(v, g);
-                b = @min(b, g);
-            }
+            g = @max(v, g);
+            a = @max(a, g);
         }
     }
     store(@min(hv, hv2), alpha, beta, g, depth);
@@ -239,7 +235,6 @@ fn start(p: *Proc) void {
 }
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
     const v = std.Thread.SpawnConfig{ .stack_size = 1024 * 1024 };
     var tmp: Vals = 0;
     for (procs) |*x| {
@@ -264,8 +259,8 @@ pub fn main() !void {
     var t = std.time.milliTimestamp();
     const ret = ab(&first, &tab, Vals_min, Vals_max, WHITE, 0, first_hash, first_hash);
     t = std.time.milliTimestamp() - t;
-    try stdout.print("{d}\n", .{t});
-    try stdout.print("{d}\n", .{ret});
+    try stdout.print("time={d}\n", .{t});
+    try stdout.print("ret={d}\n", .{ret});
     for (procs) |*x| {
         while (@cmpxchgWeak(u8, &x.m, 0, 1, .Acquire, .Acquire) != null) {}
         x.must_end = true;

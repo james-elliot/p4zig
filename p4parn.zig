@@ -5,9 +5,9 @@ const stdout = std.io.getStdOut().writer();
 const stderr = std.io.getStdErr().writer();
 const context = std.Thread.SpawnConfig{ .stack_size = 1024 * 1024 };
 // 27 bits use 2GB
-const NB_BITS: u8 = 28;
+const NB_BITS: u8 = 29;
 const SIZEX: usize = 6;
-const SIZEY: usize = 6;
+const SIZEY: usize = 7;
 // 6x7 NB_BITS=29 255s
 // 7x6 NB_BITS=29 582s
 
@@ -119,6 +119,7 @@ const ZHASH = HashElem{ .sig = 0, .v_inf = Vals_min, .v_sup = Vals_max, .d = 0, 
 
 var runnings: u8 = 0;
 const RUNMAX = 4;
+const PARDEPTH = 5;
 
 var first_hash: Sigs = undefined;
 var hashesw: [SIZEX][SIZEY]Sigs = undefined;
@@ -219,15 +220,21 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
         }
 
         if (@atomicLoad(bool, hts, .SeqCst)) {
-            //          @atomicStore(bool, &my_hts, true, .SeqCst);
-            //        for (indexes) |i| {
-            //          if (tha[i]) |t| {
-            //            t.join();
-            //          _ = @atomicRmw(u8, &runnings, .Sub, 1, .SeqCst);
-            //            }
-            // }
-            // @atomicStore(Vals, v, Val_finished, .SeqCst);
-            stderr.print("?????\n", .{}) catch unreachable;
+            //            stderr.print("enter={} {}\n", .{ idx, idy }) catch unreachable;
+            @atomicStore(bool, &my_hts, true, .SeqCst);
+            for (indexes) |i| {
+                if (tha[i]) |t| {
+                    t.join();
+                    _ = @atomicRmw(u8, &runnings, .Sub, 1, .SeqCst);
+                    if (toto[x]) |m| {
+                        defer allocator.destroy(m);
+                    }
+                    if (titi[x]) |m| {
+                        defer allocator.destroy(m);
+                    }
+                }
+            }
+            @atomicStore(Vals, v, Val_finished, .SeqCst);
             return;
         }
 
@@ -244,17 +251,18 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
                 nhv2 = hv2 ^ hashesb[SIZEX - 1 - x][y];
             }
 
-            if (@atomicLoad(u8, &runnings, .SeqCst) < RUNMAX) {
+            if ((@atomicLoad(u8, &runnings, .SeqCst) < RUNMAX) and (depth < PARDEPTH)) {
+                while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
+                stderr.print("start={} {} {}\n", .{ depth, 10 * idx + x + 1, 10 * idy + y + 1 }) catch unreachable;
+                @atomicStore(u8, &prt, 0, .SeqCst);
                 _ = @atomicRmw(u8, &runnings, .Add, 1, .SeqCst);
                 var nfirst = allocator.create([SIZEX]usize) catch unreachable;
                 toto[x] = nfirst;
-                //       defer allocator.destroy(nfirst);
                 for (first) |t, i| {
                     nfirst[i] = t;
                 }
                 var ntab = allocator.create([SIZEX][SIZEY]Colors) catch unreachable;
                 titi[x] = ntab;
-                //     defer allocator.destroy(ntab);
                 for (tab.*) |t, i| {
                     for (t) |tt, j| {
                         ntab[i][j] = tt;
@@ -275,13 +283,33 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
         active = false;
         for (indexes) |x| {
             if (tha[x]) |t| {
-                t.join();
+                // If a>=b stop everything right now
+                if (a >= b) {
+                    @atomicStore(bool, &my_hts, true, .SeqCst);
+                    for (indexes) |i| {
+                        if (tha[i]) |tt| {
+                            tt.join();
+                            tha[i] = null;
+                            _ = @atomicRmw(u8, &runnings, .Sub, 1, .SeqCst);
+                            if (toto[i]) |m| {
+                                defer allocator.destroy(m);
+                            }
+                            if (titi[i]) |m| {
+                                defer allocator.destroy(m);
+                            }
+                        }
+                    }
+                    active = false;
+                    break;
+                }
+
                 var v0 = @atomicLoad(Vals, &vv[x], .SeqCst);
                 if (v0 != Val_working) {
                     if (v0 != Val_finished) {
                         g = @max(-v0, g);
                         a = @max(a, g);
                     }
+                    t.join();
                     _ = @atomicRmw(u8, &runnings, .Sub, 1, .SeqCst);
                     tha[x] = null;
                     if (toto[x]) |m| {
@@ -291,21 +319,12 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
                         defer allocator.destroy(m);
                     }
                 } else {
-                    stderr.print("!!!!!!\n", .{}) catch unreachable;
+                    //std.Thread.yield() catch unreachable;
+                    std.time.sleep(1_000_000);
                     active = true;
                 }
             }
         }
-        //        if (a >= b) {
-        //            @atomicStore(bool, &my_hts, true, .SeqCst);
-        //            for (indexes) |i| {
-        //                if (tha[i]) |t| {
-        //                    t.join();
-        //                    _ = @atomicRmw(u8, &runnings, .Sub, 1, .SeqCst);
-        //                }
-        //            }
-        //            active = false;
-        //      }
     }
     store(@min(hv, hv2), alpha, beta, g, depth);
     //    while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}

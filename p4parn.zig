@@ -7,7 +7,7 @@ const context = std.Thread.SpawnConfig{ .stack_size = 1024 * 1024 };
 // 27 bits use 2GB
 const NB_BITS: u8 = 29;
 const SIZEX: usize = 6;
-const SIZEY: usize = 7;
+const SIZEY: usize = 6;
 // 6x7 NB_BITS=29 255s
 // 7x6 NB_BITS=29 582s
 
@@ -119,7 +119,7 @@ const ZHASH = HashElem{ .sig = 0, .v_inf = Vals_min, .v_sup = Vals_max, .d = 0, 
 
 var runnings: u8 = 0;
 const RUNMAX = 4;
-const PARDEPTH = 5;
+const PARDEPTH = 10;
 
 var first_hash: Sigs = undefined;
 var hashesw: [SIZEX][SIZEY]Sigs = undefined;
@@ -213,7 +213,7 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
     var tha = [_]?std.Thread{null} ** SIZEX;
     var toto = [_]?*[SIZEX]usize{null} ** SIZEX;
     var titi = [_]?*[SIZEX][SIZEY]Colors{null} ** SIZEX;
-
+    var active = false;
     for (indexes) |x| {
         if (a >= b) {
             break;
@@ -252,6 +252,7 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
             }
 
             if ((@atomicLoad(u8, &runnings, .SeqCst) < RUNMAX) and (depth < PARDEPTH)) {
+                active = true;
                 while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
                 stderr.print("start={} {} {}\n", .{ depth, 10 * idx + x + 1, 10 * idy + y + 1 }) catch unreachable;
                 @atomicStore(u8, &prt, 0, .SeqCst);
@@ -278,7 +279,7 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
             tab[x][y] = EMPTY;
         }
     }
-    var active = true;
+    //    var active = true;
     while (active) {
         active = false;
         for (indexes) |x| {

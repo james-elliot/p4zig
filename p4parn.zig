@@ -1,6 +1,6 @@
 const std = @import("std");
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = gpa.allocator();
+const gpa_alloc = gpa.allocator();
 const stdout = std.io.getStdOut().writer();
 const stderr = std.io.getStdErr().writer();
 const context = std.Thread.SpawnConfig{ .stack_size = 1024 * 1024 };
@@ -119,7 +119,7 @@ const ZHASH = HashElem{ .sig = 0, .v_inf = Vals_min, .v_sup = Vals_max, .d = 0, 
 
 var runnings: u8 = 0;
 const RUNMAX = 4;
-const PARDEPTH = 10;
+const PARDEPTH = 5;
 
 var first_hash: Sigs = undefined;
 var hashesw: [SIZEX][SIZEY]Sigs = undefined;
@@ -210,9 +210,9 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
     var nhv2: Sigs = undefined;
     var my_hts = false;
     var vv = [_]Vals{Val_working} ** SIZEX;
-    var tha = [_]?std.Thread{null} ** SIZEX;
-    var toto = [_]?*[SIZEX]usize{null} ** SIZEX;
-    var titi = [_]?*[SIZEX][SIZEY]Colors{null} ** SIZEX;
+    var thrs = [_]?std.Thread{null} ** SIZEX;
+    var firsts = [_]?*[SIZEX]usize{null} ** SIZEX;
+    var tabs = [_]?*[SIZEX][SIZEY]Colors{null} ** SIZEX;
     var active = false;
     for (indexes) |x| {
         if (a >= b) {
@@ -223,14 +223,14 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
             //            stderr.print("enter={} {}\n", .{ idx, idy }) catch unreachable;
             @atomicStore(bool, &my_hts, true, .SeqCst);
             for (indexes) |i| {
-                if (tha[i]) |t| {
+                if (thrs[i]) |t| {
                     t.join();
                     _ = @atomicRmw(u8, &runnings, .Sub, 1, .SeqCst);
-                    if (toto[x]) |m| {
-                        defer allocator.destroy(m);
+                    if (firsts[x]) |m| {
+                        gpa_alloc.destroy(m);
                     }
-                    if (titi[x]) |m| {
-                        defer allocator.destroy(m);
+                    if (tabs[x]) |m| {
+                        gpa_alloc.destroy(m);
                     }
                 }
             }
@@ -257,19 +257,19 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
                 stderr.print("start={} {} {}\n", .{ depth, 10 * idx + x + 1, 10 * idy + y + 1 }) catch unreachable;
                 @atomicStore(u8, &prt, 0, .SeqCst);
                 _ = @atomicRmw(u8, &runnings, .Add, 1, .SeqCst);
-                var nfirst = allocator.create([SIZEX]usize) catch unreachable;
-                toto[x] = nfirst;
+                var nfirst = gpa_alloc.create([SIZEX]usize) catch unreachable;
+                firsts[x] = nfirst;
                 for (first) |t, i| {
                     nfirst[i] = t;
                 }
-                var ntab = allocator.create([SIZEX][SIZEY]Colors) catch unreachable;
-                titi[x] = ntab;
+                var ntab = gpa_alloc.create([SIZEX][SIZEY]Colors) catch unreachable;
+                tabs[x] = ntab;
                 for (tab.*) |t, i| {
                     for (t) |tt, j| {
                         ntab[i][j] = tt;
                     }
                 }
-                tha[x] = std.Thread.spawn(context, ab, .{ nfirst, ntab, -b, -a, -color, depth + 1, nhv, nhv2, &vv[x], &my_hts, 10 * idx + x + 1, 10 * idy + y + 1 }) catch unreachable;
+                thrs[x] = std.Thread.spawn(context, ab, .{ nfirst, ntab, -b, -a, -color, depth + 1, nhv, nhv2, &vv[x], &my_hts, 10 * idx + x + 1, 10 * idy + y + 1 }) catch unreachable;
             } else {
                 ab(first, tab, -b, -a, -color, depth + 1, nhv, nhv2, &vv[x], &my_hts, 10 * idx + x + 1, 10 * idy + y + 1);
                 g = @max(-vv[x], g);
@@ -283,20 +283,20 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
     while (active) {
         active = false;
         for (indexes) |x| {
-            if (tha[x]) |t| {
+            if (thrs[x]) |t| {
                 // If a>=b stop everything right now
                 if (a >= b) {
                     @atomicStore(bool, &my_hts, true, .SeqCst);
                     for (indexes) |i| {
-                        if (tha[i]) |tt| {
+                        if (thrs[i]) |tt| {
                             tt.join();
-                            tha[i] = null;
+                            thrs[i] = null;
                             _ = @atomicRmw(u8, &runnings, .Sub, 1, .SeqCst);
-                            if (toto[i]) |m| {
-                                defer allocator.destroy(m);
+                            if (firsts[i]) |m| {
+                                defer gpa_alloc.destroy(m);
                             }
-                            if (titi[i]) |m| {
-                                defer allocator.destroy(m);
+                            if (tabs[i]) |m| {
+                                defer gpa_alloc.destroy(m);
                             }
                         }
                     }
@@ -312,12 +312,12 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
                     }
                     t.join();
                     _ = @atomicRmw(u8, &runnings, .Sub, 1, .SeqCst);
-                    tha[x] = null;
-                    if (toto[x]) |m| {
-                        defer allocator.destroy(m);
+                    thrs[x] = null;
+                    if (firsts[x]) |m| {
+                        gpa_alloc.destroy(m);
                     }
-                    if (titi[x]) |m| {
-                        defer allocator.destroy(m);
+                    if (tabs[x]) |m| {
+                        gpa_alloc.destroy(m);
                     }
                 } else {
                     //std.Thread.yield() catch unreachable;
@@ -337,12 +337,11 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
 
 pub fn main() !void {
     var first = [_]usize{0} ** SIZEX;
-    //var first = allocator.alloc(usize, SIZEX) catch unreachable;
     var tab = [_][SIZEY]Colors{[_]Colors{EMPTY} ** SIZEY} ** SIZEX;
-    const allocator2 = std.heap.page_allocator;
+    const heap_alloc = std.heap.page_allocator;
     const RndGen = std.rand.DefaultPrng;
-    hashes = try allocator2.alloc(HashElem, HASH_SIZE);
-    defer allocator2.free(hashes);
+    hashes = try heap_alloc.alloc(HashElem, HASH_SIZE);
+    defer heap_alloc.free(hashes);
     for (hashes) |*a| a.* = ZHASH;
     var rnd = RndGen.init(0);
     for (hashesw) |*b| {

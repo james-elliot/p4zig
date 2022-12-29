@@ -3,9 +3,9 @@ var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const gpa_alloc = gpa.allocator();
 const stdout = std.io.getStdOut().writer();
 const stderr = std.io.getStdErr().writer();
-const context = std.Thread.SpawnConfig{ .stack_size = 1024 * 1024 };
+const context = std.Thread.SpawnConfig{ .stack_size = 65536 };
 // 27 bits use 2GB
-const NB_BITS: u8 = 29;
+const NB_BITS: u8 = 28;
 const SIZEX: usize = 6;
 const SIZEY: usize = 6;
 // 6x7 NB_BITS=29 255s
@@ -119,7 +119,7 @@ const ZHASH = HashElem{ .sig = 0, .v_inf = Vals_min, .v_sup = Vals_max, .d = 0, 
 
 var runnings: u8 = 0;
 const RUNMAX = 8;
-const PARDEPTH = 5;
+const PARDEPTH = 2;
 
 var first_hash: Sigs = undefined;
 var hashesw: [SIZEX][SIZEY]Sigs = undefined;

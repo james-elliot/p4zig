@@ -401,7 +401,7 @@ pub fn main() !void {
     var t = std.time.milliTimestamp();
     var ret: Vals = Val_working;
     var hts = false;
-    ab(&first, &tab, Vals_min, Vals_max, WHITE, 0, first_hash, first_hash, &ret, &hts, false);
+    ab(&first, &tab, -1, 1, WHITE, 0, first_hash, first_hash, &ret, &hts, false);
     t = std.time.milliTimestamp() - t;
     try stderr.print("time={d}\n", .{t});
     try stderr.print("ret={} runnings={}\n", .{ ret, runnings });

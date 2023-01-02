@@ -101,7 +101,8 @@ const Vals = i8;
 const Vals_min: Vals = -120;
 const Vals_max: Vals = 120;
 const Val_working: Vals = 127;
-const Val_finished: Vals = 126;
+const Val_half: Vals = 126;
+const Val_finished: Vals = 125;
 const Depth = u8;
 const Colors = i8;
 const Sigs = u64;
@@ -169,15 +170,22 @@ fn inc_run() bool {
     while (@cmpxchgWeak(u8, &runnings_m, 0, 1, .SeqCst, .SeqCst) != null) {}
     if (@atomicLoad(u8, &runnings, .SeqCst) < RUNMAX) {
         _ = @atomicRmw(u8, &runnings, .Add, 1, .SeqCst);
+
+        while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
         stderr.print("starting={}\n", .{runnings}) catch unreachable;
+        @atomicStore(u8, &prt, 0, .SeqCst);
+
         @atomicStore(u8, &runnings_m, 0, .SeqCst);
         return true;
     }
+    @atomicStore(u8, &runnings_m, 0, .SeqCst);
     return false;
 }
 fn dec_run() void {
     while (@cmpxchgWeak(u8, &runnings_m, 0, 1, .SeqCst, .SeqCst) != null) {}
+    while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
     stderr.print("stopping={}\n", .{runnings}) catch unreachable;
+    @atomicStore(u8, &prt, 0, .SeqCst);
     _ = @atomicRmw(u8, &runnings, .Sub, 1, .SeqCst);
     @atomicStore(u8, &runnings_m, 0, .SeqCst);
 }
@@ -190,7 +198,9 @@ const indexes = init: {
     break :init t;
 };
 
-fn abd(
+const Status = enum { Stopped, Free, Running };
+
+fn ab(
     first: *[SIZEX]usize,
     tab: *[SIZEX][SIZEY]Colors,
     alpha: Vals,
@@ -246,8 +256,172 @@ fn abd(
     var tabs = [_]?*[SIZEX][SIZEY]Colors{null} ** SIZEX;
     var nb_runs: usize = 0;
     var runs = [_]usize{0} ** SIZEX;
+    var status = [_]Status{Status.Stopped} ** SIZEX;
+    var ix: usize = 0;
+    var free: bool = true;
+    while (true) {
+        if ((ix == SIZEX) and (free)) {
+            @atomicStore(Vals, v, Val_half, .SeqCst);
+        }
+        if (((ix == SIZEX) and (nb_runs == 0)) or (a >= b) or (@atomicLoad(bool, hts, .SeqCst))) {
+            @atomicStore(bool, &my_hts, true, .SeqCst);
+            for (indexes) |x| {
+                if (thrs[x]) |t| {
+                    t.join();
+                }
+                if (firsts[x]) |m| {
+                    gpa_alloc.destroy(m);
+                }
+                if (tabs[x]) |m| {
+                    gpa_alloc.destroy(m);
+                }
+            }
+            if (hts.*) {
+                @atomicStore(Vals, v, Val_finished, .SeqCst);
+            } else {
+                store(@min(hv, hv2), alpha, beta, g, depth);
+                @atomicStore(Vals, v, g, .SeqCst);
+            }
+            return;
+        }
+        if ((ix < SIZEX) and (first[indexes[ix]] < SIZEY) and free) {
+            var x = indexes[ix];
+            var y = first[x];
+            ix += 1;
+            runs[nb_runs] = x;
+            nb_runs += 1;
+            var nfirst = gpa_alloc.create([SIZEX]usize) catch unreachable;
+            firsts[x] = nfirst;
+            for (first) |t, i| {
+                nfirst[i] = t;
+            }
+            var ntab = gpa_alloc.create([SIZEX][SIZEY]Colors) catch unreachable;
+            tabs[x] = ntab;
+            for (tab.*) |t, i| {
+                for (t) |tt, j| {
+                    ntab[i][j] = tt;
+                }
+            }
+            nfirst[x] += 1;
+            if (color == WHITE) {
+                ntab[x][y] = WHITE;
+                nhv = hv ^ hashesw[x][y];
+                nhv2 = hv2 ^ hashesw[SIZEX - 1 - x][y];
+            } else {
+                ntab[x][y] = BLACK;
+                nhv = hv ^ hashesb[x][y];
+                nhv2 = hv2 ^ hashesb[SIZEX - 1 - x][y];
+            }
+            thrs[x] = std.Thread.spawn(context, abd, .{ nfirst, ntab, -b, -a, -color, depth + 1, nhv, nhv2, &my_hts, &vv[x] }) catch unreachable;
+            status[x] = Status.Running;
+            free = false;
+        }
+        var i: usize = 0;
+        while (i < nb_runs) : (i += 1) {
+            var x = runs[i];
+            if (vv[x] != Val_working) {
+                if (vv[x] == Val_half) {
+                    if (status[x] == Status.Running) {
+                        status[x] = Status.Free;
+                        free = true;
+                    }
+                } else {
+                    nb_runs -= 1;
+                    runs[i] = runs[nb_runs];
+                    if (status[x] == Status.Running) {
+                        free = true;
+                    }
+                    status[x] = Status.Stopped;
+                    if (thrs[x]) |t| {
+                        t.join();
+                        thrs[x] = null;
+                    }
+                    if (vv[x] != Val_finished) {
+                        g = @max(-vv[x], g);
+                        a = @max(a, g);
+                        while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
+                        stderr.print("ab g={} a={} b={}\n", .{ g, a, b }) catch unreachable;
+                        @atomicStore(u8, &prt, 0, .SeqCst);
+                    }
+                }
+            }
+        }
+        std.time.sleep(100_000);
+    }
+}
+
+fn print_tab(tab: *[SIZEX][SIZEY]Colors) void {
+    while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
+    for (tab.*) |t| {
+        for (t) |tt| {
+            stderr.print("{} ", .{tt}) catch unreachable;
+        }
+        stderr.print("\n", .{}) catch unreachable;
+    }
+    @atomicStore(u8, &prt, 0, .SeqCst);
+}
+
+fn abd(
+    first: *[SIZEX]usize,
+    tab: *[SIZEX][SIZEY]Colors,
+    alpha: Vals,
+    beta: Vals,
+    color: Colors,
+    depth: Depth,
+    hv: Sigs,
+    hv2: Sigs,
+    hts: *bool,
+    v: *Vals,
+) void {
+    while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
+    stderr.print("enter abd={}\n", .{depth}) catch unreachable;
+    @atomicStore(u8, &prt, 0, .SeqCst);
+    var a = alpha;
+    var b = beta;
+    var v_inf: Vals = undefined;
+    var v_sup: Vals = undefined;
+    if (retrieve(@min(hv, hv2), &v_inf, &v_sup)) {
+        if (v_inf == v_sup) {
+            @atomicStore(Vals, v, v_inf, .SeqCst);
+            return;
+        }
+        if (v_inf >= b) {
+            @atomicStore(Vals, v, v_inf, .SeqCst);
+            return;
+        }
+        if (v_sup <= a) {
+            @atomicStore(Vals, v, v_sup, .SeqCst);
+            return;
+        }
+        a = @max(a, v_inf);
+        b = @min(b, v_sup);
+    }
+    for (indexes) |x| {
+        const y = first[x];
+        if ((y != SIZEY) and (eval(tab, x, y, color))) {
+            @atomicStore(Vals, v, 1, .SeqCst);
+            return;
+        }
+    }
+    if (depth == MAXDEPTH) {
+        @atomicStore(Vals, v, 0, .SeqCst);
+        return;
+    }
+    var g: Vals = Vals_min;
+    var nhv: Sigs = undefined;
+    var nhv2: Sigs = undefined;
+    var my_hts = false;
+    var vv = [_]Vals{Val_working} ** SIZEX;
+    var thrs = [_]?std.Thread{null} ** SIZEX;
+    var firsts = [_]?*[SIZEX]usize{null} ** SIZEX;
+    var tabs = [_]?*[SIZEX][SIZEY]Colors{null} ** SIZEX;
+    var nb_runs: usize = 0;
+    var runs = [_]usize{0} ** SIZEX;
     var ix: usize = 0;
     while (true) {
+        if ((ix == SIZEX) and (nb_runs != 0)) {
+            @atomicStore(Vals, v, Val_half, .SeqCst);
+        }
         if (((ix == SIZEX) and (nb_runs == 0)) or (a >= b) or (@atomicLoad(bool, hts, .SeqCst))) {
             @atomicStore(bool, &my_hts, true, .SeqCst);
             for (indexes) |x| {
@@ -262,6 +436,9 @@ fn abd(
                     gpa_alloc.destroy(m);
                 }
             }
+            while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
+            stderr.print("leave abd={}\n", .{depth}) catch unreachable;
+            @atomicStore(u8, &prt, 0, .SeqCst);
             if (hts.*) {
                 @atomicStore(Vals, v, Val_finished, .SeqCst);
             } else {
@@ -298,6 +475,7 @@ fn abd(
                 nhv = hv ^ hashesb[x][y];
                 nhv2 = hv2 ^ hashesb[SIZEX - 1 - x][y];
             }
+            //            print_tab(ntab);
             thrs[x] = std.Thread.spawn(context, abs, .{ nfirst, ntab, -b, -a, -color, depth + 1, nhv, nhv2, &my_hts, &vv[x] }) catch unreachable;
         }
         var i: usize = 0;
@@ -314,6 +492,9 @@ fn abd(
                 if (vv[x] != Val_finished) {
                     g = @max(-vv[x], g);
                     a = @max(a, g);
+                    while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
+                    stderr.print("abd g={} a={} b={}\n", .{ g, a, b }) catch unreachable;
+                    @atomicStore(u8, &prt, 0, .SeqCst);
                 }
             }
         }
@@ -322,6 +503,11 @@ fn abd(
 }
 
 fn abs(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals, color: Colors, depth: Depth, hv: Sigs, hv2: Sigs, hts: *bool, ret: *Vals) void {
+    if (depth == 2) {
+        while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
+        stderr.print("enter abs={}\n", .{depth}) catch unreachable;
+        @atomicStore(u8, &prt, 0, .SeqCst);
+    }
     if (@atomicLoad(bool, hts, .SeqCst)) {
         ret.* = Val_finished;
         return;
@@ -390,6 +576,11 @@ fn abs(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals
     }
     store(@min(hv, hv2), alpha, beta, g, depth);
     ret.* = g;
+    if (depth == 2) {
+        while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
+        stderr.print("leave abs={}\n", .{depth}) catch unreachable;
+        @atomicStore(u8, &prt, 0, .SeqCst);
+    }
     return;
 }
 
@@ -412,7 +603,7 @@ pub fn main() !void {
     var t = std.time.milliTimestamp();
     var ret: Vals = Val_working;
     var hts = false;
-    abd(&first, &tab, Vals_min, Vals_max, WHITE, 0, first_hash, first_hash, &hts, &ret);
+    ab(&first, &tab, Vals_min, Vals_max, WHITE, 0, first_hash, first_hash, &hts, &ret);
     t = std.time.milliTimestamp() - t;
     try stderr.print("time={d}\n", .{t});
     try stderr.print("ret={} runnings={}\n", .{ ret, runnings });

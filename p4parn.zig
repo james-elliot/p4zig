@@ -5,8 +5,8 @@ const stdout = std.io.getStdOut().writer();
 const stderr = std.io.getStdErr().writer();
 const context = std.Thread.SpawnConfig{ .stack_size = 65536 };
 // 27 bits use 2GB
-const NB_BITS: u8 = 28;
-const SIZEX: usize = 6;
+const NB_BITS: u8 = 32;
+const SIZEX: usize = 7;
 const SIZEY: usize = 6;
 // 6x7 NB_BITS=29 255s
 // 7x6 NB_BITS=29 582s

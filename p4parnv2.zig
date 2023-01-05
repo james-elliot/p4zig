@@ -5,12 +5,21 @@ const stdout = std.io.getStdOut().writer();
 const stderr = std.io.getStdErr().writer();
 const context = std.Thread.SpawnConfig{ .stack_size = 65536 };
 // 27 bits use 2GB
-const NB_BITS: u8 = 30;
-const SIZEX: usize = 7;
-const SIZEY: usize = 6;
+const NB_BITS: u8 = 32;
+const SIZEX: usize = 10;
+const SIZEY: usize = 4;
+const RUNMAX = 8;
 // 6x7 NB_BITS=29 255s
 // 7x6 NB_BITS=29 582s
-
+// 7x6 NB_BITS=29 RUNMAX=8 t=234s
+// 7x6 NB_BITS=31 RUNMAX=8 t=142s
+// 7x6 NB_BITS=32 RUNMAX=8 t=137s
+// 8x5 NB_BITS=32 RUNMAX=8 t=80s
+// 5x8 NB_BITS=32 RUNMAX=8 t=16s
+// 6x8 NB_BITS=32 RUNMAX=8 t=4147s
+// SIZEX=5 SIZEY=9   NB_BITS=32 RUNMAX=8 ret=0 time=193.117s
+// SIZEX=4 SIZEY=10 NB_BITS=32 RUNMAX=8 ret=0 time=35.343s
+// SIZEX=9 SIZEY=5   NB_BITS=32 RUNMAX=8 ret=1 time=2935.087s
 fn eval(tab: *[SIZEX][SIZEY]Colors, x: usize, y: usize, color: Colors) bool {
     // For vertical search, search only below
     if (y >= FOUR - 1) {
@@ -120,7 +129,6 @@ const ZHASH = HashElem{ .sig = 0, .v_inf = Vals_min, .v_sup = Vals_max, .d = 0, 
 
 var runnings_m: u8 = 0;
 var runnings: u8 = 0;
-const RUNMAX = 8;
 const PARDEPTH = 2;
 
 var first_hash: Sigs = undefined;
@@ -256,6 +264,7 @@ fn ab(
     var status = [_]Status{Status.Stopped} ** SIZEX;
     var ix: usize = 0;
     var free: bool = true;
+    //    const XMAX = (SIZEX + 1) / 2;
     while (true) {
         //        while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
         //        stderr.print("ab loop a={} b={}\n", .{ a, b }) catch unreachable;
@@ -313,7 +322,7 @@ fn ab(
                 nhv = hv ^ hashesb[x][y];
                 nhv2 = hv2 ^ hashesb[SIZEX - 1 - x][y];
             }
-            thrs[x] = std.Thread.spawn(context, abd, .{ nfirst, ntab, &b, &a, -color, depth + 1, nhv, nhv2, &my_hts, &vv[x] }) catch unreachable;
+            thrs[x] = std.Thread.spawn(context, abd, .{ nfirst, ntab, &b, &a, -color, depth + 1, nhv, nhv2, &my_hts, &vv[x], x + 1 }) catch unreachable;
             status[x] = Status.Running;
             free = false;
         }
@@ -362,20 +371,9 @@ fn print_tab(tab: *[SIZEX][SIZEY]Colors) void {
     @atomicStore(u8, &prt, 0, .SeqCst);
 }
 
-fn abd(
-    first: *[SIZEX]usize,
-    tab: *[SIZEX][SIZEY]Colors,
-    alpha: *Vals,
-    beta: *Vals,
-    color: Colors,
-    depth: Depth,
-    hv: Sigs,
-    hv2: Sigs,
-    hts: *bool,
-    v: *Vals,
-) void {
+fn abd(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: *Vals, beta: *Vals, color: Colors, depth: Depth, hv: Sigs, hv2: Sigs, hts: *bool, v: *Vals, idx: usize) void {
     while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
-    stderr.print("enter abd={}\n", .{depth}) catch unreachable;
+    stderr.print("enter abd={}\n", .{idx}) catch unreachable;
     @atomicStore(u8, &prt, 0, .SeqCst);
     var a = -alpha.*;
     var b = -beta.*;
@@ -439,7 +437,7 @@ fn abd(
                 }
             }
             while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
-            stderr.print("leave abd={}\n", .{depth}) catch unreachable;
+            stderr.print("leave abd={}\n", .{idx}) catch unreachable;
             @atomicStore(u8, &prt, 0, .SeqCst);
             if (hts.*) {
                 @atomicStore(Vals, v, Val_finished, .SeqCst);
@@ -478,7 +476,7 @@ fn abd(
                 nhv2 = hv2 ^ hashesb[SIZEX - 1 - x][y];
             }
             //            print_tab(ntab);
-            thrs[x] = std.Thread.spawn(context, abs, .{ nfirst, ntab, &b, &a, -color, depth + 1, nhv, nhv2, &my_hts, &vv[x] }) catch unreachable;
+            thrs[x] = std.Thread.spawn(context, abs, .{ nfirst, ntab, &b, &a, -color, depth + 1, nhv, nhv2, &my_hts, &vv[x], idx * 10 + x + 1 }) catch unreachable;
         }
         var i: usize = 0;
         while (i < nb_runs) : (i += 1) {
@@ -495,7 +493,7 @@ fn abd(
                     g = @max(-vv[x], g);
                     a = @max(a, g);
                     while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
-                    stderr.print("abd g={} a={} b={}\n", .{ g, a, b }) catch unreachable;
+                    stderr.print("abd g={} a={} b={} idx={}\n", .{ g, a, b, idx }) catch unreachable;
                     @atomicStore(u8, &prt, 0, .SeqCst);
                 }
             }
@@ -504,9 +502,9 @@ fn abd(
     }
 }
 
-fn abs(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: *Vals, beta: *Vals, color: Colors, depth: Depth, hv: Sigs, hv2: Sigs, hts: *bool, ret: *Vals) void {
+fn abs(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: *Vals, beta: *Vals, color: Colors, depth: Depth, hv: Sigs, hv2: Sigs, hts: *bool, ret: *Vals, idx: usize) void {
     while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
-    stderr.print("enter abs={}\n", .{depth}) catch unreachable;
+    stderr.print("enter abs={}\n", .{idx}) catch unreachable;
     @atomicStore(u8, &prt, 0, .SeqCst);
     if (@atomicLoad(bool, hts, .SeqCst)) {
         ret.* = Val_finished;
@@ -559,7 +557,13 @@ fn abs(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: *Vals, beta: *Va
                 nhv = hv ^ hashesb[x][y];
                 nhv2 = hv2 ^ hashesb[SIZEX - 1 - x][y];
             }
+            while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
+            stderr.print("searching idx={}\n", .{idx * 10 + x + 1}) catch unreachable;
+            @atomicStore(u8, &prt, 0, .SeqCst);
             const v = abs2(first, tab, -b, -a, -color, depth + 1, nhv, nhv2, hts);
+            while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
+            stderr.print("solved idx={} v={}\n", .{ idx * 10 + x + 1, v }) catch unreachable;
+            @atomicStore(u8, &prt, 0, .SeqCst);
             first[x] -= 1;
             tab[x][y] = EMPTY;
             if (v == Val_finished) {
@@ -577,7 +581,7 @@ fn abs(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: *Vals, beta: *Va
     store(@min(hv, hv2), -alpha.*, -beta.*, g, depth);
     ret.* = g;
     while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
-    stderr.print("leave abs={}\n", .{depth}) catch unreachable;
+    stderr.print("leave abs={}\n", .{idx}) catch unreachable;
     @atomicStore(u8, &prt, 0, .SeqCst);
     return;
 }
@@ -666,8 +670,8 @@ pub fn main() !void {
     var hts = false;
     ab(&first, &tab, -1, 1, WHITE, 0, first_hash, first_hash, &hts, &ret);
     t = std.time.milliTimestamp() - t;
-    try stderr.print("time={d}\n", .{t});
-    try stderr.print("ret={} runnings={}\n", .{ ret, runnings });
+    var t2: f64 = @intToFloat(f64, t) / 1000.0;
+    try stderr.print("SIZEX={} SIZEY={} NB_BITS={} RUNMAX={} ret={} time={d}s\n", .{ SIZEX, SIZEY, NB_BITS, RUNMAX, ret, t2 });
 }
 
 //const Inner = struct { a: u32, b: bool };

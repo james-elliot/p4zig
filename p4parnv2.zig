@@ -6,8 +6,8 @@ const stderr = std.io.getStdErr().writer();
 const context = std.Thread.SpawnConfig{ .stack_size = 65536 };
 // 27 bits use 2GB
 const NB_BITS: u8 = 32;
-const SIZEX: usize = 10;
-const SIZEY: usize = 4;
+const SIZEX: usize = 7;
+const SIZEY: usize = 7;
 const RUNMAX = 8;
 // 6x7 NB_BITS=29 255s
 // 7x6 NB_BITS=29 582s
@@ -20,6 +20,10 @@ const RUNMAX = 8;
 // SIZEX=5 SIZEY=9   NB_BITS=32 RUNMAX=8 ret=0 time=193.117s
 // SIZEX=4 SIZEY=10 NB_BITS=32 RUNMAX=8 ret=0 time=35.343s
 // SIZEX=9 SIZEY=5   NB_BITS=32 RUNMAX=8 ret=1 time=2935.087s
+//SIZEX=10 SIZEY=4 NB_BITS=32 RUNMAX=8 ret=-1 time=6023.398s
+//SIZEX=9 SIZEY=5 NB_BITS=32 RUNMAX=8 ret=1 time=2815.818s
+//SIZEX=7 SIZEY=6 NB_BITS=32 RUNMAX=8 ret=1 time=134.317s
+//SIZEX=7 SIZEY=7 NB_BITS=32 RUNMAX=8 ret=0 time=27006.757s
 fn eval(tab: *[SIZEX][SIZEY]Colors, x: usize, y: usize, color: Colors) bool {
     // For vertical search, search only below
     if (y >= FOUR - 1) {
@@ -206,6 +210,13 @@ const indexes = init: {
     break :init t;
 };
 
+const XMAX = (SIZEX + 1) / 2;
+const indexes2 = init: {
+    var t: [XMAX]usize = undefined;
+    for (t) |*b, ix| b.* = XMAX - ix - 1;
+    break :init t;
+};
+
 const Status = enum { Stopped, Free, Running };
 
 fn ab(
@@ -222,35 +233,6 @@ fn ab(
 ) void {
     var a = alpha;
     var b = beta;
-    var v_inf: Vals = undefined;
-    var v_sup: Vals = undefined;
-    if (retrieve(@min(hv, hv2), &v_inf, &v_sup)) {
-        if (v_inf == v_sup) {
-            @atomicStore(Vals, v, v_inf, .SeqCst);
-            return;
-        }
-        if (v_inf >= b) {
-            @atomicStore(Vals, v, v_inf, .SeqCst);
-            return;
-        }
-        if (v_sup <= a) {
-            @atomicStore(Vals, v, v_sup, .SeqCst);
-            return;
-        }
-        a = @max(a, v_inf);
-        b = @min(b, v_sup);
-    }
-    for (indexes) |x| {
-        const y = first[x];
-        if ((y != SIZEY) and (eval(tab, x, y, color))) {
-            @atomicStore(Vals, v, 1, .SeqCst);
-            return;
-        }
-    }
-    if (depth == MAXDEPTH) {
-        @atomicStore(Vals, v, 0, .SeqCst);
-        return;
-    }
     var g: Vals = Vals_min;
     var nhv: Sigs = undefined;
     var nhv2: Sigs = undefined;
@@ -264,18 +246,17 @@ fn ab(
     var status = [_]Status{Status.Stopped} ** SIZEX;
     var ix: usize = 0;
     var free: bool = true;
-    //    const XMAX = (SIZEX + 1) / 2;
     while (true) {
         //        while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
         //        stderr.print("ab loop a={} b={}\n", .{ a, b }) catch unreachable;
         //        @atomicStore(u8, &prt, 0, .SeqCst);
 
-        if ((ix == SIZEX) and (free)) {
+        if ((ix == XMAX) and (free)) {
             @atomicStore(Vals, v, Val_half, .SeqCst);
         }
-        if (((ix == SIZEX) and (nb_runs == 0)) or (a >= b) or (@atomicLoad(bool, hts, .SeqCst))) {
+        if (((ix == XMAX) and (nb_runs == 0)) or (a >= b) or (@atomicLoad(bool, hts, .SeqCst))) {
             @atomicStore(bool, &my_hts, true, .SeqCst);
-            for (indexes) |x| {
+            for (indexes2) |x| {
                 if (thrs[x]) |t| {
                     t.join();
                 }
@@ -294,8 +275,8 @@ fn ab(
             }
             return;
         }
-        if ((ix < SIZEX) and (first[indexes[ix]] < SIZEY) and free) {
-            var x = indexes[ix];
+        if ((ix < XMAX) and (first[indexes2[ix]] < SIZEY) and free) {
+            var x = indexes2[ix];
             var y = first[x];
             ix += 1;
             runs[nb_runs] = x;

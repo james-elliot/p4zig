@@ -5,10 +5,11 @@ const stdout = std.io.getStdOut().writer();
 const stderr = std.io.getStdErr().writer();
 const context = std.Thread.SpawnConfig{ .stack_size = 65536 };
 // 27 bits use 2GB
-const NB_BITS: u8 = 32;
-const SIZEX: usize = 8;
+const NB_BITS: u8 = 29;
+const SIZEX: usize = 7;
 const SIZEY: usize = 6;
-const RUNMAX = 8;
+const RUNMAX = 4;
+const PARDEPTH = 2;
 // SIZEX=4 SIZEY=5 NB_BITS=32 RUNMAX=8 ret=0 time=0.005s
 // SIZEX=4 SIZEY=6 NB_BITS=32 RUNMAX=8 ret=0 time=0.028s
 // SIZEX=4 SIZEY=7 NB_BITS=32 RUNMAX=8 ret=0 time=0.094s
@@ -153,7 +154,6 @@ const ZHASH = HashElem{ .sig = 0, .v_inf = Vals_min, .v_sup = Vals_max, .d = 0, 
 
 var runnings_m: u8 = 0;
 var runnings: u8 = 0;
-const PARDEPTH = 2;
 
 var first_hash: Sigs = undefined;
 var hashesw: [SIZEX][SIZEY]Sigs = undefined;
@@ -230,29 +230,11 @@ const indexes = init: {
     break :init t;
 };
 
-const XMAX = (SIZEX + 1) / 2;
-const indexes2 = init: {
-    var t: [XMAX]usize = undefined;
-    for (t) |*b, ix| b.* = XMAX - ix - 1;
-    break :init t;
-};
-
 const Status = enum { Stopped, Free, Running };
 
-fn ab(
-    first: *[SIZEX]usize,
-    tab: *[SIZEX][SIZEY]Colors,
-    alpha: Vals,
-    beta: Vals,
-    color: Colors,
-    depth: Depth,
-    hv: Sigs,
-    hv2: Sigs,
-    hts: *bool,
-    v: *Vals,
-) void {
-    var a = alpha;
-    var b = beta;
+fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: *Vals, beta: *Vals, color: Colors, depth: Depth, hv: Sigs, hv2: Sigs, hts: *bool, v: *Vals, idx: usize) void {
+    var a = -alpha.*;
+    var b = -beta.*;
     var g: Vals = Vals_min;
     var nhv: Sigs = undefined;
     var nhv2: Sigs = undefined;
@@ -266,17 +248,38 @@ fn ab(
     var status = [_]Status{Status.Stopped} ** SIZEX;
     var ix: usize = 0;
     var free: bool = true;
+    var v_inf: Vals = undefined;
+    var v_sup: Vals = undefined;
+
+    if (retrieve(@min(hv, hv2), &v_inf, &v_sup)) {
+        if (v_inf == v_sup) {
+            @atomicStore(Vals, v, v_inf, .SeqCst);
+            return;
+        }
+        if (v_inf >= b) {
+            @atomicStore(Vals, v, v_inf, .SeqCst);
+            return;
+        }
+        if (v_sup <= a) {
+            @atomicStore(Vals, v, v_sup, .SeqCst);
+            return;
+        }
+        a = @max(a, v_inf);
+        b = @min(b, v_sup);
+    }
+
     while (true) {
+        b = @min(b, -beta.*);
         //        while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
         //        stderr.print("ab loop a={} b={}\n", .{ a, b }) catch unreachable;
         //        @atomicStore(u8, &prt, 0, .SeqCst);
 
-        if ((ix == XMAX) and (free)) {
+        if ((ix == SIZEX) and (free)) {
             @atomicStore(Vals, v, Val_half, .SeqCst);
         }
-        if (((ix == XMAX) and (nb_runs == 0)) or (a >= b) or (@atomicLoad(bool, hts, .SeqCst))) {
+        if (((ix == SIZEX) and (nb_runs == 0)) or (a >= b) or (@atomicLoad(bool, hts, .SeqCst))) {
             @atomicStore(bool, &my_hts, true, .SeqCst);
-            for (indexes2) |x| {
+            for (indexes) |x| {
                 if (thrs[x]) |t| {
                     t.join();
                 }
@@ -290,13 +293,13 @@ fn ab(
             if (hts.*) {
                 @atomicStore(Vals, v, Val_finished, .SeqCst);
             } else {
-                store(@min(hv, hv2), alpha, beta, g, depth);
+                store(@min(hv, hv2), -alpha.*, -beta.*, g, depth);
                 @atomicStore(Vals, v, g, .SeqCst);
             }
             return;
         }
-        if ((ix < XMAX) and (first[indexes2[ix]] < SIZEY) and free) {
-            var x = indexes2[ix];
+        if ((ix < SIZEX) and (first[indexes[ix]] < SIZEY) and free) {
+            var x = indexes[ix];
             var y = first[x];
             ix += 1;
             runs[nb_runs] = x;
@@ -323,12 +326,20 @@ fn ab(
                 nhv = hv ^ hashesb[x][y];
                 nhv2 = hv2 ^ hashesb[SIZEX - 1 - x][y];
             }
-            thrs[x] = std.Thread.spawn(context, abd, .{ nfirst, ntab, &b, &a, -color, depth + 1, nhv, nhv2, &my_hts, &vv[x], x + 1 }) catch unreachable;
+            while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
+            stderr.print("depth={}\n", .{depth}) catch unreachable;
+            @atomicStore(u8, &prt, 0, .SeqCst);
+            if (depth < PARDEPTH)
+                thrs[x] = std.Thread.spawn(context, ab, .{ nfirst, ntab, &b, &a, -color, depth + 1, nhv, nhv2, &my_hts, &vv[x], idx * 10 + x + 1 }) catch unreachable
+            else
+                thrs[x] = std.Thread.spawn(context, abd, .{ nfirst, ntab, &b, &a, -color, depth + 1, nhv, nhv2, &my_hts, &vv[x], idx * 10 + x + 1 }) catch unreachable;
             status[x] = Status.Running;
             free = false;
         }
         var i: usize = 0;
-        while (i < nb_runs) : (i += 1) {
+        var incr: bool = true;
+        while (i < nb_runs) {
+            incr = true;
             var x = runs[i];
             if (vv[x] != Val_working) {
                 if (vv[x] == Val_half) {
@@ -339,6 +350,7 @@ fn ab(
                 } else {
                     nb_runs -= 1;
                     runs[i] = runs[nb_runs];
+                    incr = false;
                     if (status[x] == Status.Running) {
                         free = true;
                     }
@@ -356,6 +368,7 @@ fn ab(
                     }
                 }
             }
+            if (incr) i += 1;
         }
         std.time.sleep(100_000);
     }
@@ -669,10 +682,12 @@ pub fn main() !void {
     var t = std.time.milliTimestamp();
     var ret: Vals = Val_working;
     var hts = false;
-    ab(&first, &tab, -1, 1, WHITE, 0, first_hash, first_hash, &hts, &ret);
+    var alpha: Vals = 1;
+    var beta: Vals = -1;
+    ab(&first, &tab, &alpha, &beta, WHITE, 0, first_hash, first_hash, &hts, &ret, 0);
     t = std.time.milliTimestamp() - t;
     var t2: f64 = @intToFloat(f64, t) / 1000.0;
-    try stderr.print("SIZEX={} SIZEY={} NB_BITS={} RUNMAX={} ret={} time={d}s\n", .{ SIZEX, SIZEY, NB_BITS, RUNMAX, ret, t2 });
+    try stderr.print("SIZEX={} SIZEY={} NB_BITS={} RUNMAX={} PARDEPTH={} ret={} time={d}s\n", .{ SIZEX, SIZEY, NB_BITS, RUNMAX, PARDEPTH, ret, t2 });
 }
 
 //const Inner = struct { a: u32, b: bool };

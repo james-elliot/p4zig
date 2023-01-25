@@ -6,7 +6,7 @@ const stderr = std.io.getStdErr().writer();
 const context = std.Thread.SpawnConfig{ .stack_size = 1024 * 1024 };
 // 27 bits use 2GB
 const NB_BITS: u8 = 32;
-const SIZEX: usize = 6;
+const SIZEX: usize = 7;
 const SIZEY: usize = 6;
 const RUNMAX = 8;
 const PARDEPTH = 4;

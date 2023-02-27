@@ -9,7 +9,7 @@ const NB_BITS: u8 = 32;
 const SIZEX: usize = 7;
 const SIZEY: usize = 6;
 const RUNMAX = 8;
-const PARDEPTH = 4;
+const PARDEPTH = 2;
 const DEBUG = true;
 // SIZEX=4 SIZEY=5 NB_BITS=32 RUNMAX=8 ret=0 time=0.005s
 // SIZEX=4 SIZEY=6 NB_BITS=32 RUNMAX=8 ret=0 time=0.028s
@@ -234,7 +234,7 @@ fn dec_run() void {
 
 const indexes = init: {
     var t: [SIZEX]usize = undefined;
-    for (t) |*b, ix| b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
+    for (&t, 0..) |*b, ix| b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
     break :init t;
 };
 
@@ -323,13 +323,13 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: *Vals, beta: *Val
             nb_runs += 1;
             var nfirst = gpa_alloc.create([SIZEX]usize) catch unreachable;
             firsts[x] = nfirst;
-            for (first) |t, i| {
+            for (first, 0..) |t, i| {
                 nfirst[i] = t;
             }
             var ntab = gpa_alloc.create([SIZEX][SIZEY]Colors) catch unreachable;
             tabs[x] = ntab;
-            for (tab.*) |t, i| {
-                for (t) |tt, j| {
+            for (tab.*, 0..) |t, i| {
+                for (t, 0..) |tt, j| {
                     ntab[i][j] = tt;
                 }
             }
@@ -475,13 +475,13 @@ fn abd(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: *Vals, beta: *Va
             nb_runs += 1;
             var nfirst = gpa_alloc.create([SIZEX]usize) catch unreachable;
             firsts[x] = nfirst;
-            for (first) |t, i| {
+            for (first, 0..) |t, i| {
                 nfirst[i] = t;
             }
             var ntab = gpa_alloc.create([SIZEX][SIZEY]Colors) catch unreachable;
             tabs[x] = ntab;
-            for (tab.*) |t, i| {
-                for (t) |tt, j| {
+            for (tab.*, 0..) |t, i| {
+                for (t, 0..) |tt, j| {
                     ntab[i][j] = tt;
                 }
             }
@@ -667,10 +667,10 @@ pub fn main() !void {
     defer heap_alloc.free(hashes);
     for (hashes) |*a| a.* = ZHASH;
     var rnd = RndGen.init(0);
-    for (hashesw) |*b| {
+    for (&hashesw) |*b| {
         for (b) |*a| a.* = rnd.random().int(Sigs);
     }
-    for (hashesb) |*b| {
+    for (&hashesb) |*b| {
         for (b) |*a| a.* = rnd.random().int(Sigs);
     }
     first_hash = rnd.random().int(Sigs);

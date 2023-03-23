@@ -172,7 +172,7 @@ fn ab(
 ) Vals {
     const indexes = comptime init: {
         var t: [SIZEX]usize = undefined;
-        for (t) |*b, ix| b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
+        for (&t, 0..) |*b, ix| b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
         break :init t;
     };
     var a = alpha;
@@ -245,10 +245,10 @@ pub fn main() !void {
     defer allocator.free(hashes);
     for (hashes) |*a| a.* = ZHASH;
     var rnd = RndGen.init(0);
-    for (hashesw) |*b| {
+    for (&hashesw) |*b| {
         for (b) |*a| a.* = rnd.random().int(Sigs);
     }
-    for (hashesb) |*b| {
+    for (&hashesb) |*b| {
         for (b) |*a| a.* = rnd.random().int(Sigs);
     }
     first_hash = rnd.random().int(Sigs);

@@ -187,7 +187,7 @@ var prt: u8 = 0;
 fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals, color: Colors, depth: Depth, hv: Sigs, hv2: Sigs, v: *Vals, hts: *bool, sub: bool) void {
     const indexes = comptime init: {
         var t: [SIZEX]usize = undefined;
-        for (t) |*b, ix| b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
+        for (&t, 0..) |*b, ix| b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
         break :init t;
     };
     //    while (@cmpxchgWeak(u8, &prt, 0, 1, .SeqCst, .SeqCst) != null) {}
@@ -294,13 +294,13 @@ fn ab(first: *[SIZEX]usize, tab: *[SIZEX][SIZEY]Colors, alpha: Vals, beta: Vals,
                 nb_runs += 1;
                 var nfirst = gpa_alloc.create([SIZEX]usize) catch unreachable;
                 firsts[x] = nfirst;
-                for (first) |t, i| {
+                for (first, 0..) |t, i| {
                     nfirst[i] = t;
                 }
                 var ntab = gpa_alloc.create([SIZEX][SIZEY]Colors) catch unreachable;
                 tabs[x] = ntab;
-                for (tab.*) |t, i| {
-                    for (t) |tt, j| {
+                for (tab.*, 0..) |t, i| {
+                    for (t, 0..) |tt, j| {
                         ntab[i][j] = tt;
                     }
                 }
@@ -391,10 +391,10 @@ pub fn main() !void {
     defer heap_alloc.free(hashes);
     for (hashes) |*a| a.* = ZHASH;
     var rnd = RndGen.init(0);
-    for (hashesw) |*b| {
+    for (&hashesw) |*b| {
         for (b) |*a| a.* = rnd.random().int(Sigs);
     }
-    for (hashesb) |*b| {
+    for (&hashesb) |*b| {
         for (b) |*a| a.* = rnd.random().int(Sigs);
     }
     first_hash = rnd.random().int(Sigs);

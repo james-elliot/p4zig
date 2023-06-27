@@ -171,7 +171,7 @@ fn ab(
 ) Vals {
     const indexes = comptime init: {
         var t: [SIZEX]usize = undefined;
-        for (t) |*b, ix| b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
+        for (&t, 0..) |*b, ix| b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
         break :init t;
     };
     var a = alpha;
@@ -242,7 +242,7 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     const v = std.Thread.SpawnConfig{ .stack_size = 1024 * 1024 };
     var tmp: Vals = 0;
-    for (procs) |*x| {
+    for (&procs) |*x| {
         x.th = try std.Thread.spawn(v, start, .{x});
         x.g = &tmp;
     }
@@ -254,10 +254,10 @@ pub fn main() !void {
     defer allocator.free(hashes);
     for (hashes) |*a| a.* = ZHASH;
     var rnd = RndGen.init(0);
-    for (hashesw) |*b| {
+    for (&hashesw) |*b| {
         for (b) |*a| a.* = rnd.random().int(Sigs);
     }
-    for (hashesb) |*b| {
+    for (&hashesb) |*b| {
         for (b) |*a| a.* = rnd.random().int(Sigs);
     }
     first_hash = rnd.random().int(Sigs);
@@ -266,7 +266,7 @@ pub fn main() !void {
     t = std.time.milliTimestamp() - t;
     try stdout.print("{d}\n", .{t});
     try stdout.print("{d}\n", .{ret});
-    for (procs) |*x| {
+    for (&procs) |*x| {
         while (@cmpxchgWeak(u8, &x.m, 0, 1, .Acquire, .Acquire) != null) {}
         x.must_end = true;
         @atomicStore(u8, &x.m, 0, .Release);
@@ -277,4 +277,3 @@ pub fn main() !void {
 
 //const Inner = struct { a: u32, b: bool };
 //var toto = [_][20]Inner{[_]Inner{.{ .a = 1, .b = true }} ** 20} ** 10;
-

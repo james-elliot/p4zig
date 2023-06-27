@@ -4,12 +4,12 @@ const std = @import("std");
 const NB_BITS: u8 = 30;
 const SIZEX: usize = 7;
 const SIZEY: usize = 6;
-// 6x7 NB_BITS=29 255s
-// 7x6 NB_BITS=29 582s
+// 6x7 NB_BITS=29 170s
+// 7x6 NB_BITS=30 367s
 
 const Vals = i8;
-const Vals_min: Vals = -128;
-const Vals_max: Vals = 127;
+const Vals_min: Vals = std.math.minInt(i8);
+const Vals_max: Vals = std.math.maxInt(i8);
 const Depth = u8;
 const Colors = i8;
 const Sigs = u64;
@@ -172,13 +172,13 @@ fn ab(
 ) Vals {
     const indexes = comptime init: {
         var t: [SIZEX]usize = undefined;
-        for (t) |*b, ix| b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
+        for (&t, 0..) |*b, ix| b.* = (SIZEX - 1) / 2 + (ix + 1) / 2 * (2 * (ix % 2)) - (ix + 1) / 2;
         break :init t;
     };
     var a = alpha;
     var b = beta;
-    var v_inf: Vals = 0;
-    var v_sup: Vals = 0;
+    var v_inf: Vals = undefined;
+    var v_sup: Vals = undefined;
     if (retrieve(@min(hv, hv2), &v_inf, &v_sup)) {
         if (v_inf == v_sup) return v_inf;
         if (v_inf >= b) return v_inf;
@@ -245,10 +245,10 @@ pub fn main() !void {
     defer allocator.free(hashes);
     for (hashes) |*a| a.* = ZHASH;
     var rnd = RndGen.init(0);
-    for (hashesw) |*b| {
+    for (&hashesw) |*b| {
         for (b) |*a| a.* = rnd.random().int(Sigs);
     }
-    for (hashesb) |*b| {
+    for (&hashesb) |*b| {
         for (b) |*a| a.* = rnd.random().int(Sigs);
     }
     first_hash = rnd.random().int(Sigs);
@@ -261,4 +261,3 @@ pub fn main() !void {
 
 //const Inner = struct { a: u32, b: bool };
 //var toto = [_][20]Inner{[_]Inner{.{ .a = 1, .b = true }} ** 20} ** 10;
-

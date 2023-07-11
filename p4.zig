@@ -1,8 +1,8 @@
 const std = @import("std");
 
 // 27 bits use 2GB
-const NB_BITS: u8 = 30;
-const SIZEX: usize = 7;
+const NB_BITS: u8 = 28;
+const SIZEX: usize = 6;
 const SIZEY: usize = 6;
 // 6x7 NB_BITS=29 170s
 // 7x6 NB_BITS=30 367s
